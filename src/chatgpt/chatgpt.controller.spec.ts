@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChatgptController } from './chatgpt.controller';
 import { ChatgptService } from './chatgpt.service';
-import { ConfigService } from '@nestjs/config'; // Keep if needed for other reasons, but controller primarily uses ChatgptService
+import { ConfigService } from '@nestjs/config';
 import { CreateChatCompletionRequestDto } from './dto/create-chat-completion-request.dto';
-import { of, throwError } from 'rxjs';
-import { HttpException, InternalServerErrorException } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
+// Removed 'of' and 'throwError' from rxjs as service now returns Promise
 
 // Mock ChatgptService
 const mockChatgptService = {
-  fetchChatGptResponse: jest.fn(),
+  fetchChatGptResponse: jest.fn(), // This will be a jest.Mock returning a Promise<string>
 };
 
 // Mock ConfigService (if controller were to use it directly)
@@ -52,54 +52,65 @@ describe('ChatgptController', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('getChatGptResponse', () => {
-    const dto: CreateChatCompletionRequestDto = { prompt: 'Test prompt' };
-    const mockServiceResponse = { choices: [{ text: 'Service response' }] };
+  describe('showChatInterface (GET /chatgpt)', () => {
+    it('should return initial data for rendering the chat interface', async () => {
+      const result = await controller.showChatInterface();
+      expect(result).toEqual({
+        prompt: null,
+        response: null,
+        error: null,
+      });
+    });
+  });
 
-    it('should call ChatgptService.fetchChatGptResponse and return its result', async () => {
-      mockChatgptService.fetchChatGptResponse.mockReturnValue(of(mockServiceResponse));
+  describe('getChatGptResponse (POST /chatgpt)', () => {
+    const testPrompt = 'Test prompt';
+    const dto: CreateChatCompletionRequestDto = { prompt: testPrompt };
+
+    it('should call ChatgptService.fetchChatGptResponse and return prompt and response on success', async () => {
+      const mockApiResponse = 'Mocked AI response';
+      mockChatgptService.fetchChatGptResponse.mockResolvedValue(mockApiResponse);
 
       const result = await controller.getChatGptResponse(dto);
 
-      result.subscribe(data => {
-        expect(data).toEqual(mockServiceResponse);
-        expect(mockChatgptService.fetchChatGptResponse).toHaveBeenCalledWith(dto.prompt);
+      expect(mockChatgptService.fetchChatGptResponse).toHaveBeenCalledWith(testPrompt);
+      expect(result).toEqual({
+        prompt: testPrompt,
+        response: mockApiResponse,
+        error: null,
       });
     });
 
-    it('should re-throw HttpException if service throws HttpException', async () => {
-      const error = new HttpException('Service error', 400);
-      mockChatgptService.fetchChatGptResponse.mockReturnValue(throwError(() => error));
+    it('should return prompt and error message if service throws HttpException', async () => {
+      const serviceError = new HttpException('Service Error XYZ', 500);
+      mockChatgptService.fetchChatGptResponse.mockRejectedValue(serviceError);
 
-      try {
-        await controller.getChatGptResponse(dto);
-      } catch (e) {
-        expect(e).toBeInstanceOf(HttpException);
-        expect(e.message).toBe('Service error');
-        expect(e.getStatus()).toBe(400);
-      }
+      const result = await controller.getChatGptResponse(dto);
+
+      expect(mockChatgptService.fetchChatGptResponse).toHaveBeenCalledWith(testPrompt);
+      // The controller extracts the message from HttpException.getResponse()
+      // If getResponse() returns a string, that's the error.
+      // If it returns { message: '...', ...}, then error.message is used by controller.
+      // For a simple new HttpException('Service Error XYZ', 500), getResponse() is { message: "Service Error XYZ", statusCode: 500 }
+      expect(result).toEqual({
+        prompt: testPrompt,
+        response: null,
+        error: 'Service Error XYZ',
+      });
     });
 
-    it('should throw InternalServerErrorException if service throws a non-HttpException', async () => {
-      const error = new Error('Some unexpected error');
-      // Make the mock return an Observable that errors
-      mockChatgptService.fetchChatGptResponse.mockReturnValue(throwError(() => error));
+    it('should return prompt and error message if service throws a non-HttpException', async () => {
+      const genericError = new Error('Some unexpected generic error');
+      mockChatgptService.fetchChatGptResponse.mockRejectedValue(genericError);
 
-      try {
-        // Since the controller method is async and returns a Promise<Observable>,
-        // we need to handle the promise rejection that contains the observable error.
-        await controller.getChatGptResponse(dto);
-      } catch (e) {
-        // This catch block will handle errors thrown synchronously by the controller,
-        // or if the observable itself is constructed improperly and throws.
-        // However, for errors *within* the observable stream, they need to be caught
-        // by subscribing or converting the observable to a promise.
-        // For NestJS, it often handles this by itself if an HttpException is thrown.
-        // If ChatgptService wraps non-HttpException into an HttpException, that's what controller will see.
-        // If not, NestJS might default to a 500.
-        // Let's assume our service always throws an HttpException or NestJS default.
-        expect(e).toEqual(error); // The controller currently directly returns the observable
-      }
+      const result = await controller.getChatGptResponse(dto);
+
+      expect(mockChatgptService.fetchChatGptResponse).toHaveBeenCalledWith(testPrompt);
+      expect(result).toEqual({
+        prompt: testPrompt,
+        response: null,
+        error: 'Some unexpected generic error',
+      });
     });
   });
 });
