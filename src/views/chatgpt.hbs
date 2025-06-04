@@ -1,0 +1,32 @@
+{{!< layouts/main }}
+
+<h1>ChatGPT Interface</h1>
+
+<form method="POST" action="/chatgpt">
+    <div>
+        <label for="prompt">Enter your prompt:</label>
+        <textarea id="prompt" name="prompt" rows="4" placeholder="Enter your prompt here"></textarea>
+    </div>
+    <button type="submit">Submit</button>
+</form>
+
+{{#if prompt}}
+    <div class="prompt-display">
+        <h4>Your Prompt:</h4>
+        <p>{{prompt}}</p>
+    </div>
+{{/if}}
+
+{{#if response}}
+    <div class="response-display">
+        <h4>ChatGPT Response:</h4>
+        <pre>{{response}}</pre>
+    </div>
+{{/if}}
+
+{{#if error}}
+    <div class="error-display">
+        <h4>Error:</h4>
+        <p>{{error}}</p>
+    </div>
+{{/if}}
